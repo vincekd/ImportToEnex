@@ -40,6 +40,7 @@ def htmlFileToEnex(inputPath, outputDir, tag, attrib, attribVal, inputDir):
     global inputPathCount
     global indexErrorCount
     fileCount += 1
+    println(args.author)
     with codecs.open(inputPath, "r", "utf-8") as inf, codecs.open(outfname, "w", outputEncoding) as outf:
         try:
             note = extractNoteFromHtmlFile(inputPath)
@@ -69,6 +70,8 @@ def htmlFileToEnex(inputPath, outputDir, tag, attrib, attribVal, inputDir):
 
             # replace line break with <br/>
             note.text = note.text.replace('\n', '<br/>').replace('\r', '<br/>').replace('&', '_')
+            created = "Today"
+            updated = "Today"
 
             # enex file template
             enexXML = Template("""
@@ -77,6 +80,11 @@ def htmlFileToEnex(inputPath, outputDir, tag, attrib, attribVal, inputDir):
                 <en-export application="Evernote" version="Evernote">
                     <note>
                         <title>${note.title}</title>
+                        <created>${dateTime}</created>
+                        <updated></updated>
+                        <note-attributes>
+                            <author>${args.author}</author>
+                        </note-attributes>
                         <content>
                             <![CDATA[<?xml version="1.0" encoding="UTF-8" standalone="no"?>
                             <!DOCTYPE en-note SYSTEM "http://xml.evernote.com/pub/enml2.dtd">
@@ -145,7 +153,7 @@ def try_mkdir(dir):
 htmlExt = re.compile(r"\.html$", re.I)
     
 class Note:
-    def __init__(self, title, text, labels):
+    def __init__(self, title, text, labels, dtime):
 
         #self.ctime = parse(heading, parserinfo(dayfirst=True))
         self.title = title
@@ -189,8 +197,11 @@ def extractNoteFromHtmlFile(inputPath):
         labels.append(label)
     if archiveStatus:
         labels.append("Archive")
+        
+    dtime = "Nonono"
+    println(tree.xpath("//span[@class='heading']/text()"))
 
-    return Note(title, text, labels)
+    return Note(title, text, labels, dtime)
 
 def getHtmlDir(takeoutDir):
     "Returns first subdirectory beneath takeoutDir which contains .html files"
@@ -242,6 +253,7 @@ def getArgs():
         help="use the system encoding for the output")
     parser.add_argument("--format", choices=["Evernote"],
         default='Evernote', help="Output Format")
+    parser.add_argument("--author", default="Anonymous")
     global args
     args = parser.parse_args()    
 
