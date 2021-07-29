@@ -3,6 +3,8 @@ import sys, glob, os, shutil, zipfile, time, codecs, re, argparse, json, base64,
 from zipfile import ZipFile
 from datetime import datetime, timezone
 from PIL import Image
+from mako.template import Template
+from dateutil.parser import parse, parserinfo
 
 indexErrorCount = 0
 fileCount = 0
@@ -12,18 +14,17 @@ class InvalidEncoding(Exception):
     def __init__(self, inner):
         Exception.__init__(self)
         self.inner = str(inner)
-        
+
 def msg(s):
     print(s, file=sys.stderr)
     sys.stderr.flush()
 
-def jsonFileToEnex(inputPath, outputDir, tag, attrib, attribVal, inputDir):
-    basename = os.path.basename(inputPath).replace(".html", ".enex")
+def jsonFileToEnex(inputPath, outputDir, inputDir):
     global fileCount
-    outfname = os.path.join(outputDir, str(fileCount)+".enex")
+    basename = os.path.basename(inputPath).replace(".html", ".enex")
+    outfname = os.path.join(outputDir, str(fileCount) + ".enex")
 
-    fileCount += 1
-    with codecs.open(inputPath, "r", "utf-8") as inf, codecs.open(outfname, "w", outputEncoding) as outf:
+    with codecs.open(inputPath, "r", "utf-8") as inf, codecs.open(outfname, "w", args.encoding) as outf:
         try:
             note = extractNoteFromJsonFile(inputPath, inputDir)
 
@@ -48,22 +49,26 @@ def jsonFileToEnex(inputPath, outputDir, tag, attrib, attribVal, inputDir):
             </en-note>
             ]]>
         </content>
-        
+
         % for attachment in note.attachments:
         <resource>
             <data encoding="base64">
 ${attachment["data"]}
             </data>
             <mime>${attachment["mimetype"]}</mime>
+            % if attachment["width"]:
             <width>${attachment["width"]}</width>
+            % endif
+            % if attachment["height"]:
             <height>${attachment["height"]}</height>
+            % endif
             <resource-attributes>
                 <file-name>${attachment["filename"]}</file-name>
                 <source-url></source-url>
             </resource-attributes>
         </resource>
         % endfor
-        
+
         % for label in note.labels:
         <tag>${label}</tag>
         % endfor
@@ -73,60 +78,56 @@ ${attachment["data"]}
 
             with codecs.open(outfname, 'w', 'utf-8') as outfile:
                 outfile.write(enexXML.render(note=note))
-        except IndexError:
-            msg("index error: " + inputPath)
+                fileCount += 1
+        except Exception as e:
             indexErrorCount += 1
+            msg("error: " + inputPath)
+            print(e)
 
-    
-        
-def jsonDirToEnex(inputDir, outputDir, tag, attrib, attribVal):
+def jsonDirToEnex(inputDir, outputDir):
     try_rmtree(outputDir)
     try_mkdir(outputDir)
     msg("Building enex files in {0} ...".format(outputDir))
-    
-    for path in glob.glob(os.path.join(inputDir, "*.json")):
-        jsonFileToEnex(path, outputDir, tag, attrib, attribVal, inputDir)
 
-    global fileCount
-    msg("Done. Imported %s json files." % fileCount)
-    
+    for path in glob.glob(os.path.join(inputDir, "*.json")):
+        jsonFileToEnex(path, outputDir, inputDir)
+
+    global fileCount, indexErrorCount
+    msg("Done. Imported %s json files. Errors: %s." % (fileCount, indexErrorCount))
+
 def tryUntilDone(action, check):
     ex = None
-    i = 1
-    while True:
+    i = 0
+    while i < 20:
         try:
             if check(): return
         except Exception as e:
             ex = e
-                
-        if i == 20: break
-        
+
         try:
             action()
         except Exception as e:
             ex = e
-            
+
         time.sleep(1)
         i += 1
-        
-    sys.exit(ex if ex != None else "Failed")          
-        
-def try_rmtree(dir):
-    if os.path.isdir(dir): msg("Removing {0}".format(dir))
 
-    def act(): shutil.rmtree(dir)        
-    def check(): return not os.path.isdir(dir)        
+    sys.exit(ex if ex != None else "Failed")
+
+def try_rmtree(folder):
+    if os.path.isdir(folder): msg("Removing {0}".format(folder))
+
+    def act(): shutil.rmtree(folder)
+    def check(): return not os.path.isdir(folder)
     tryUntilDone(act, check)
-        
-def try_mkdir(dir):
-    def act(): os.mkdir(dir)
-    def check(): return os.path.isdir(dir)
+
+def try_mkdir(folder):
+    def act(): os.mkdir(folder)
+    def check(): return os.path.isdir(folder)
     tryUntilDone(act, check)
-    
+
 class Note:
     def __init__(self, title, text, labels, dtime, attachments):
-
-        #self.ctime = parse(heading, parserinfo(dayfirst=True))
         self.title = title or args.defaultTitle
         self.text = text
         self.labels = labels
@@ -134,7 +135,7 @@ class Note:
         self.datestamp = dtime.strftime("%Y%m%dT%H%M%SZ")
         self.author = args.author
         self.attachments = attachments
-        
+
 def extractNoteFromJsonFile(inputPath, inputDir):
     """
     Extracts the note heading (containing the ctime), text, and labels from
@@ -153,8 +154,8 @@ def extractNoteFromJsonFile(inputPath, inputDir):
     #print("title: " + title)
 
     if not title:
-        title = (args.defaultTitle + " #" + str(fileCount)).strip()
-    
+        title = (args.defaultTitle + " #" + str(fileCount + 1)).strip()
+
     text = ""
     if "listContent" in note:
         for li in note.get("listContent"):
@@ -164,19 +165,23 @@ def extractNoteFromJsonFile(inputPath, inputDir):
         text = note.get("textContent", "")
 
     text = text.strip().replace('\n', '<br/>').replace('\r', '<br/>').replace('&', '&amp;')
-    
+
     labels = [t["name"].strip() for t in note.get("labels", [])]
     if note["isArchived"]:
         labels.append("archived")
     if note["isTrashed"]:
         labels.append("keep:trash")
+        if not args.includeTrashed:
+            print("is trashed: %s" % str(fileCount))
+            print(note)
+            raise Exception("Is Trashed")
     if note["isPinned"]:
         labels.append("keep:pinned")
 
-    #labels.append("keep")
-    
-    dtime = note.get("userEditedTimestampUsec") / 1000 / 1000
-    stime = datetime.utcfromtimestamp(dtime)
+    if args.addLabel:
+        labels.append(args.addLabel)
+
+    dtime = datetime.utcfromtimestamp(note.get("userEditedTimestampUsec") / 1000 / 1000)
 
     attachments = []
     for attachment in note.get("attachments", []):
@@ -197,12 +202,12 @@ def extractNoteFromJsonFile(inputPath, inputDir):
                 attachment["width"] = ""
                 attachment["height"] = ""
                 print(e)
-                print("file: %s" % str(fileCount - 1))
-        
-        #print(attachment)    
+                print("file: %s" % str(fileCount))
+
+        #print(attachment)
         attachments.append(attachment)
 
-    return Note(title, text, labels, stime, attachments)
+    return Note(title, text, labels, dtime, attachments)
 
 def getJsonDir(takeoutDir):
     "Returns first subdirectory beneath takeoutDir which contains .json files"
@@ -215,9 +220,9 @@ def getJsonDir(takeoutDir):
 def keepZipToOutput(zipFileName):
     zipFileDir = os.path.dirname(zipFileName)
     takeoutDir = os.path.join(zipFileDir, "Takeout")
-    
+
     try_rmtree(takeoutDir)
-    
+
     if os.path.isfile(zipFileName):
         msg("Extracting {0} ...".format(zipFileName))
 
@@ -229,60 +234,33 @@ def keepZipToOutput(zipFileName):
 
     jsonDir = getJsonDir(takeoutDir)
     if jsonDir is None: sys.exit("No Keep directory found")
-    
+
     msg("Keep dir: " + jsonDir)
 
-    if args.format == "Evernote":
-        jsonDirToEnex(inputDir=jsonDir,
-            outputDir=os.path.join(zipFileDir, "Text"),
-            tag="div", attrib="class", attribVal="content")
-        
-def setOutputEncoding():
-    global outputEncoding
-    outputEncoding = args.encoding
-    if outputEncoding is not None: return
-    if args.system_encoding: outputEncoding = sys.stdin.encoding
-    if outputEncoding is not None: return    
-    outputEncoding = "utf-8"
+    jsonDirToEnex(inputDir=jsonDir, outputDir=os.path.join(zipFileDir, "Evernote_Files"))
 
 def getArgs():
     parser = argparse.ArgumentParser()
     parser.add_argument("zipFile")
-    parser.add_argument("--encoding",
-        help="character encoding of output")
-    parser.add_argument("--system-encoding", action="store_true",
-        help="use the system encoding for the output")
-    parser.add_argument("--format", choices=["Evernote"],
-        default='Evernote', help="Output Format")
+    parser.add_argument("--encoding", default=sys.stdin.encoding or "utf-8")
     parser.add_argument("--author", default="Anonymous")
     parser.add_argument("--defaultTitle", default="")
-    global args
-    args = parser.parse_args()    
-
-def doImports():
-##    global etree
-##    from lxml import etree
-    global Template
-    from mako.template import Template
-    global parse, parserinfo
-    from dateutil.parser import parse, parserinfo
+    parser.add_argument("--includeTrashed", default=False)
+    parser.add_argument("--addLabel", default=None)
+    return parser.parse_args()
 
 def main():
-    getArgs()
-    doImports()
-    setOutputEncoding()
-        
-    msg("Output encoding: " + outputEncoding)
-    
+    global args
+    args = getArgs()
+
+    print(vars(args))
+
     try:
         keepZipToOutput(args.zipFile)
     except WindowsError as ex:
         sys.exit(ex)
     except InvalidEncoding as ex:
         sys.exit(ex.inner)
-    global indexErrorCount
-    global fileCount
 
 if __name__ == "__main__":
     main()
-
