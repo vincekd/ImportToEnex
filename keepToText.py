@@ -151,22 +151,30 @@ def extractNoteFromJsonFile(inputPath, inputDir):
         note.text = "title: " + title + "\n\n" + note.text
         title = title[:251]
     #print("title: " + title)
+
+    if not title:
+        title = (args.defaultTitle + " #" + str(fileCount)).strip()
     
     text = ""
     if "listContent" in note:
-        #msg("List content" + title + " - " + str(fileCount - 1))
-        #print(note.get("listContent"))
         for li in note.get("listContent"):
             text += "<li>" + li.get("text") + "</li>"
         text = "<ul>" + text + "</ul>"
-        if title:
-            title = "Checklist: " + title
     else:
         text = note.get("textContent", "")
 
     text = text.strip().replace('\n', '<br/>').replace('\r', '<br/>').replace('&', '&amp;')
     
     labels = [t["name"].strip() for t in note.get("labels", [])]
+    if note["isArchived"]:
+        labels.append("archived")
+    if note["isTrashed"]:
+        labels.append("keep:trash")
+    if note["isPinned"]:
+        labels.append("keep:pinned")
+
+    #labels.append("keep")
+    
     dtime = note.get("userEditedTimestampUsec") / 1000 / 1000
     stime = datetime.utcfromtimestamp(dtime)
 
@@ -177,7 +185,6 @@ def extractNoteFromJsonFile(inputPath, inputDir):
         with codecs.open(path, "rb") as image_file:
             data = image_file.read()
             attachment["data"] = base64.b64encode(data).decode("utf-8")
-            #print(attachment["data"].decode('utf-8'))
             attachment["filename"] = attachment["filePath"]
             attachment["hash"] = hashlib.md5(data).hexdigest()
             attachment["path"] = path
@@ -190,6 +197,7 @@ def extractNoteFromJsonFile(inputPath, inputDir):
                 attachment["width"] = ""
                 attachment["height"] = ""
                 print(e)
+                print("file: %s" % str(fileCount - 1))
         
         #print(attachment)    
         attachments.append(attachment)
