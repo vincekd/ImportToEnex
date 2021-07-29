@@ -42,10 +42,11 @@ def jsonFileToEnex(inputPath, outputDir, inputDir):
         <content>
             <![CDATA[<?xml version="1.0" encoding="UTF-8" standalone="no"?>
             <!DOCTYPE en-note SYSTEM "http://xml.evernote.com/pub/enml2.dtd">
-            <en-note style="word-wrap: break-word; -webkit-nbsp-mode: space; -webkit-line-break: after-white-space;">${note.text}
-            % for attachment in note.attachments:
-            <en-media style="--en-naturalWidth:${attachment["width"]}; --en-naturalHeight:${attachment["height"]};" hash="${attachment["hash"]}" type="${attachment["mimetype"]}" />
-            % endfor
+            <en-note>
+                <div style="word-wrap: break-word; -webkit-nbsp-mode: space; -webkit-line-break: after-white-space;">${note.text}</div>
+                % for attachment in note.attachments:
+                <en-media style="--en-naturalWidth:${attachment["width"]}; --en-naturalHeight:${attachment["height"]};" hash="${attachment["hash"]}" type="${attachment["mimetype"]}" />
+                % endfor
             </en-note>
             ]]>
         </content>
@@ -238,6 +239,9 @@ def keepZipToOutput(zipFileName):
     msg("Keep dir: " + jsonDir)
 
     jsonDirToEnex(inputDir=jsonDir, outputDir=os.path.join(zipFileDir, "Evernote_Files"))
+
+    msg("cleaning up...")
+    try_rmtree(takeoutDir)
 
 def getArgs():
     parser = argparse.ArgumentParser()
