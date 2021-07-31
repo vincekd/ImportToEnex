@@ -4,7 +4,7 @@ from zipfile import ZipFile
 from datetime import datetime, timezone
 from PIL import Image
 from mako.template import Template
-from dateutil.parser import parse, parserinfo
+# from dateutil.parser import parse
 
 indexErrorCount = 0
 fileCount = 0
@@ -20,7 +20,7 @@ def msg(s):
     sys.stderr.flush()
 
 def jsonFileToEnex(inputPath, outputDir, inputDir):
-    global fileCount
+    global fileCount, indexErrorCount
     basename = os.path.basename(inputPath).replace(".html", ".enex")
     outfname = os.path.join(outputDir, str(fileCount) + ".enex")
 
@@ -183,6 +183,15 @@ def extractNoteFromJsonFile(inputPath, inputDir):
         labels.append(args.addLabel)
 
     dtime = datetime.utcfromtimestamp(note.get("userEditedTimestampUsec") / 1000 / 1000)
+    if not note.get("userEditedTimestampUsec"):
+        name = os.path.splitext(os.path.basename(inputPath))[0]
+        # print("time wrong: %s - %s" % (fileCount, name))
+        timezone_index = name.rfind("-")
+        name = name[:timezone_index] + name[timezone_index:].replace("_", "")
+        dtime = datetime.strptime(name, '%Y-%m-%dT%H_%M_%S.%f%z').astimezone(timezone.utc)
+        # print(dtime.strftime("%Y%m%dT%H%M%SZ"))
+        # print(timezone)
+        # print(note)
 
     attachments = []
     for attachment in note.get("attachments", []):
