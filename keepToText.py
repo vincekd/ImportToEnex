@@ -148,11 +148,11 @@ def extractNoteFromJsonFile(inputPath, inputDir):
         data = myfile.read()
     note = json.loads(data)
     title = note.get("title", "").strip()
+
     # edit title if length too long
     if len(title) >= 250:
         note.text = "title: " + title + "\n\n" + note.text
         title = title[:251]
-    #print("title: " + title)
 
     if not title:
         title = (args.defaultTitle + " #" + str(fileCount + 1)).strip()
@@ -185,18 +185,14 @@ def extractNoteFromJsonFile(inputPath, inputDir):
     dtime = datetime.utcfromtimestamp(note.get("userEditedTimestampUsec") / 1000 / 1000)
     if not note.get("userEditedTimestampUsec"):
         name = os.path.splitext(os.path.basename(inputPath))[0]
-        # print("time wrong: %s - %s" % (fileCount, name))
         timezone_index = name.rfind("-")
         name = name[:timezone_index] + name[timezone_index:].replace("_", "")
         dtime = datetime.strptime(name, '%Y-%m-%dT%H_%M_%S.%f%z').astimezone(timezone.utc)
-        # print(dtime.strftime("%Y%m%dT%H%M%SZ"))
-        # print(timezone)
-        # print(note)
 
     attachments = []
     for attachment in note.get("attachments", []):
         path = os.path.join(inputDir, attachment["filePath"].replace(".jpeg", ".jpg"))
-        #print(path, attachment["filePath"])
+
         with codecs.open(path, "rb") as image_file:
             data = image_file.read()
             attachment["data"] = base64.b64encode(data).decode("utf-8")
@@ -214,7 +210,6 @@ def extractNoteFromJsonFile(inputPath, inputDir):
                 print(e)
                 print("file: %s" % str(fileCount))
 
-        #print(attachment)
         attachments.append(attachment)
 
     return Note(title, text, labels, dtime, attachments)
