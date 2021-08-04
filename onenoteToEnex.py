@@ -1,7 +1,11 @@
-import email, os, sys, argparse, re, operator, codecs
+import email, os, sys, argparse, re, operator, codecs, base64
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 from mako.template import Template
+
+args = None
+attr_whitelist = ["src", "attr", "alt", "height", "width", "type", "title", "summary"]
+done = {}
 
 class Note:
     def __init__(self, title, dtime, contents):
@@ -45,32 +49,46 @@ class Note:
 """)
         return enexXML.render(note=self)
 
-def strip_attrs(node):
-    global args
-    if node and node.name is not None:
-        style = node.attrs.get("style")
-        node.attrs = {}
-        if args.keepStyle and style:
-            style = whitespace(style)
-            new_style = []
-            if "bold" in style:
-                new_style.append("font-weight: bold")
-            if "italic" in style:
-                new_style.append("font-style: italic")
-            if "underline" in style:
-                new_style.append("text-decoration: underline")
+def normalize_style(style):
+    style = whitespace(style)
+    new_style = []
+    if "bold" in style:
+        new_style.append("font-weight: bold")
+    if "italic" in style:
+        new_style.append("font-style: italic")
+    if "underline" in style:
+        new_style.append("text-decoration: underline")
 
-            if len(new_style) > 0:
-                node.attrs["style"] = ";".join(new_style)
+    return ";".join(new_style)
 
-        for n in node.findAll():
-            strip_attrs(n)
+def strip_attrs(nodes):
+    # global args, attr_whitelist, done
+
+    if nodes and len(nodes) > 0:
+        for node in nodes:
+            if node and node.name is not None:
+                style = node.attrs.get("style")
+                attrs = node.attrs.items()
+                node.attrs = {}
+
+                for key, value in attrs:
+                    if key in attr_whitelist:
+                        node.attrs[key] = whitespace(value)
+##                    if key not in done:
+##                        done[key] = True
+##                        print(key)
+##                        print(node.prettify())
+
+                if args.keepStyle and style:
+                     node.attrs["style"] = normalize_style(style)
+
+                strip_attrs(node.findAll())
 
 def whitespace(text):
     wreg = r'[\n\r ]+'
     return re.sub(wreg, " ", (text or "").strip())
 
-def htmlToNotes(html):
+def htmlToNotes(html, media=[]):
 
     soup = BeautifulSoup(html, "html.parser")
     notes = []
@@ -79,26 +97,40 @@ def htmlToNotes(html):
     #soup.html.body.find_all("div", recursive=False)
     for child in soup.html.body.children:
         if child.name == "div":
-            base = [c for c in child.children if c.name is not None][0]
-            [title_node, date_node, *contents] = [c for c in base.contents if c.name is not None]
-            title = whitespace(title_node.get_text())
-            date = whitespace(date_node.get_text().strip())
-            dtime = datetime.strptime(date, '%A, %B %d, %Y %I:%M %p').astimezone(timezone.utc)
-            html = ""
-            
-            if len(contents) > 0:
-                for node in contents:
-                    strip_attrs(node)
-                html = whitespace("".join([str(n) for n in contents]))
-            else:
-                print("no contents: %s" % title)
+            try:
+                base = [c for c in child.children if c.name is not None][0]
+                [title_node, date_node, *contents] = [c for c in base.contents if c.name is not None]
 
-            note = Note(title, dtime, html)
-            notes.append(note)
+                title = whitespace(title_node.get_text())
+                if len(contents) > 0:
+                    date = whitespace(date_node.get_text().strip())
+                    dtime = datetime.strptime(date, '%A, %B %d, %Y %I:%M %p').astimezone(timezone.utc)
+                    html = ""
 
-            index += 1
+                    strip_attrs(contents)
+
+                    if len(media) > 0:
+                        elements = base.findAll(src=True)
+                        for element in elements:
+                            src = os.path.basename(element.attrs.get("src"))
+                            for m in media:
+                                name = os.path.basename(m.get("content-location"))
+                                if name == src:
+                                    element.attrs["src"] = "data:" + m.get_content_type() + ";charset=urf-8;base64," + m.get_payload(decode=False)
+                                    break
+
+                    html = whitespace("".join([n.prettify() for n in contents]))
+                    note = Note(title, dtime, html)
+                    notes.append(note)
+                else:
+                    print("no contents: %i-%s" % (index, title))
+                index += 1
+            except Exception as e:
+                print("ERROR in section", index)
+                print(e)
+
     notes.sort(key=operator.attrgetter('datetime'))
-    
+
     print("total: #%s" % str(index))
     return notes
 
@@ -106,19 +138,33 @@ def mhtToHtml(mht_file_path):
     name = os.path.splitext(os.path.basename(mht_file_path))[0]
     dir_path = os.path.dirname(mht_file_path)
     html_file_path = os.path.join(dir_path, name + ".html")
-    
+
     print(name)
     print(dir_path)
     print(html_file_path)
-    
+    notes = []
+
     with open(mht_file_path, "rb") as mht_file:
         msg = email.message_from_bytes(mht_file.read())
         if msg.is_multipart():
             print("multipart!!!!!")
+            htmls = []
+            media = []
+            for part in msg.get_payload():
+                if part.get_content_type() == "text/html":
+                    htmls.append(part.get_payload(decode=True))
+                else:
+                    #print("has media", part.get_content_type(), part.get("content-location"))
+                    media.append(part)
+
+            if len(htmls) > 1:
+                print("multiple html parts!!!!")
+            else:
+                notes = htmlToNotes(htmls[0], media)
         else:
             notes = htmlToNotes(msg.get_payload(decode=True))
 
-    outpath = os.path.join(dir_path, "Evernote_Files")
+    outpath = os.path.join(dir_path, "Evernote_Files_" + name)
     print(outpath)
     try:
         #os.mkdir(args.output_path)
