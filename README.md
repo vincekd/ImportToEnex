@@ -33,12 +33,9 @@ Install Python, then, run the script through the command prompt by `python oneno
 Exports to Evernote_Files in same directory.
 
 ## Options
-`--defaultTitle "Google Keep Import"` default "" - (Will append `"#" + [note number]` regardless)
  
 `--author "Anonymous"` default "Anonymous"
  
-`--encoding "utf-8"` default system encoding or utf-8
-
  `--addLabel "onenote"` default None
  
  `---keepStyle True` default False
