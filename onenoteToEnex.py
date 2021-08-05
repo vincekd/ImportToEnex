@@ -4,8 +4,8 @@ from bs4 import BeautifulSoup
 from mako.template import Template
 
 args = None
-attr_whitelist = ["src", "attr", "alt", "height", "width", "type", "title", "summary"]
-done = {}
+attr_whitelist = ["src", "alt", "height", "width", "type", "title", "summary", "href", "rel"]
+# done = {}
 
 class Note:
     def __init__(self, title, dtime, contents):
@@ -66,7 +66,7 @@ def strip_attrs(nodes):
 
     if nodes and len(nodes) > 0:
         for node in nodes:
-            if node and node.name is not None:
+            if is_element(node):
                 style = node.attrs.get("style")
                 attrs = node.attrs.items()
                 node.attrs = {}
@@ -88,7 +88,10 @@ def whitespace(text):
     wreg = r'[\n\r ]+'
     return re.sub(wreg, " ", (text or "").strip())
 
-def htmlToNotes(html, media=[]):
+def is_element(node):
+    return node and node.name is not None
+
+def html_to_notes(html, media=[]):
 
     soup = BeautifulSoup(html, "html.parser")
     notes = []
@@ -99,7 +102,7 @@ def htmlToNotes(html, media=[]):
         if child.name == "div":
             try:
                 base = [c for c in child.children if c.name is not None][0]
-                [title_node, date_node, *contents] = [c for c in base.contents if c.name is not None]
+                [title_node, date_node, *contents] = [c for c in base.contents if is_element(c)]
 
                 title = whitespace(title_node.get_text())
                 if len(contents) > 0:
@@ -134,38 +137,37 @@ def htmlToNotes(html, media=[]):
     print("total: #%s" % str(index))
     return notes
 
-def mhtToHtml(mht_file_path):
+def mht_to_html(mht_file_path):
     name = os.path.splitext(os.path.basename(mht_file_path))[0]
     dir_path = os.path.dirname(mht_file_path)
     html_file_path = os.path.join(dir_path, name + ".html")
 
-    print(name)
-    print(dir_path)
-    print(html_file_path)
+    print("name:", name)
+    print("dir path:", dir_path)
+    print("html file path:", html_file_path)
     notes = []
 
     with open(mht_file_path, "rb") as mht_file:
         msg = email.message_from_bytes(mht_file.read())
         if msg.is_multipart():
-            print("multipart!!!!!")
             htmls = []
             media = []
             for part in msg.get_payload():
                 if part.get_content_type() == "text/html":
                     htmls.append(part.get_payload(decode=True))
                 else:
-                    #print("has media", part.get_content_type(), part.get("content-location"))
+                    print("has media", part.get_content_type(), part.get("content-location"))
                     media.append(part)
 
             if len(htmls) > 1:
                 print("multiple html parts!!!!")
             else:
-                notes = htmlToNotes(htmls[0], media)
+                notes = html_to_notes(htmls[0], media)
         else:
-            notes = htmlToNotes(msg.get_payload(decode=True))
+            notes = html_to_notes(msg.get_payload(decode=True))
 
     outpath = os.path.join(dir_path, "Evernote_Files_" + name)
-    print(outpath)
+    print("outpath:", outpath)
     try:
         #os.mkdir(args.output_path)
         os.mkdir(outpath)
@@ -178,7 +180,7 @@ def mhtToHtml(mht_file_path):
         xml = note.to_enex()
         with codecs.open(outfname, 'w', 'utf-8') as outfile:
             outfile.write(xml)
-    print("Done!!!!!")
+    print("Done!!!!! - %i enex files created" % len(notes))
 
 def getArgs():
     parser = argparse.ArgumentParser()
@@ -197,8 +199,10 @@ def main():
 
     print(vars(args))
 
+    # TODO: get mht files
+
     try:
-        mhtToHtml(args.mht_file_path)
+        mht_to_html(args.mht_file_path)
     except Exception as ex:
         print("error!")
         sys.exit(ex)
