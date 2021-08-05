@@ -1,15 +1,15 @@
-import email, os, sys, argparse, re, operator, codecs, base64
+import email, os, sys, argparse, re, operator, codecs, base64, glob
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 from mako.template import Template
 
 args = None
-attr_whitelist = ["src", "alt", "height", "width", "type", "title", "summary", "href", "rel"]
-# done = {}
+attr_whitelist = ["src", "alt", "height", "width", "type", "title", "summary", "href", "rel"] # "value"
+done = {}
 
 class Note:
     def __init__(self, title, dtime, contents):
-        self.title = title or args.defaultTitle
+        self.title = title
         self.contents = contents
         self.labels = [] if not args.addLabel else [args.addLabel]
         self.datetime = dtime
@@ -74,13 +74,16 @@ def strip_attrs(nodes):
                 for key, value in attrs:
                     if key in attr_whitelist:
                         node.attrs[key] = whitespace(value)
-##                    if key not in done:
-##                        done[key] = True
-##                        print(key)
-##                        print(node.prettify())
+                    if key not in done:
+                        done[key] = True
+                        # print("has key: key)
+                        # print(node.prettify())
 
-                if args.keepStyle and style:
-                     node.attrs["style"] = normalize_style(style)
+                if style:
+                    if args.keepStyle:
+                        node.attrs["style"] = whitespace(style)
+                    else:
+                        node.attrs["style"] = normalize_style(style)
 
                 strip_attrs(node.findAll())
 
@@ -180,15 +183,12 @@ def mht_to_html(mht_file_path):
         xml = note.to_enex()
         with codecs.open(outfname, 'w', 'utf-8') as outfile:
             outfile.write(xml)
-    print("Done!!!!! - %i enex files created" % len(notes))
+    print("finished '%s' - %i enex files created" % (mht_file_path, len(notes)))
 
 def getArgs():
     parser = argparse.ArgumentParser()
-    parser.add_argument("mht_file_path")
-    #parser.add_argument("output_path")
-    parser.add_argument("--encoding", default=sys.stdin.encoding or "utf-8")
+    parser.add_argument("mht_dir_path")
     parser.add_argument("--author", default="Anonymous")
-    parser.add_argument("--defaultTitle", default="")
     parser.add_argument("--addLabel", default=None)
     parser.add_argument("--keepStyle", default=False)
     return parser.parse_args()
@@ -200,12 +200,20 @@ def main():
     print(vars(args))
 
     # TODO: get mht files
+    for path in glob.glob(os.path.join(args.mht_dir_path, "*.mht")):
+        try: 
+            print("importing: ", path)
+            mht_to_html(path)
+        except Exception as e:
+            print("error importing %s" % path)
+            print(e)
 
-    try:
-        mht_to_html(args.mht_file_path)
-    except Exception as ex:
-        print("error!")
-        sys.exit(ex)
+    print("attributes: ", list(done.keys()))
+##    try:
+##        mht_to_html(args.mht_dir_path)
+##    except Exception as ex:
+##        print("error!")
+##        sys.exit(ex)
 
 if __name__ == "__main__":
     main()
