@@ -6,6 +6,8 @@ from PIL import Image
 from mako.template import Template
 # from dateutil.parser import parse
 
+## TODO: account for different colored notes with tags
+
 indexErrorCount = 0
 fileCount = 0
 jsonExt = re.compile(r"\.json$", re.I)
