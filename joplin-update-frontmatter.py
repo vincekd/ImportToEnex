@@ -78,7 +78,8 @@ created: {created}
 updated: {updated}
 """
             if tags:
-                front_matter += "tags: [" + tags + "]\n---\n\n"
+                front_matter += "tags: [" + tags + "]\n"
+            front_matter += "---\n\n"
 
             # front_matter += "# " + title + "\n"
 
