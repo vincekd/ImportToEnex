@@ -26,7 +26,6 @@
 import sys, re, json, random, requests
 from datetime import datetime, timezone
 
-# CHANGE THE SETTING BELOW TO YOUR BIG TOKEN (See Joplin API documentation)
 TOKEN = sys.argv[1]
 NOTES_ENDPOINT = "http://localhost:41184/notes"
 TITLE_CHARS = 55
@@ -41,13 +40,12 @@ def get_note_tags(noteid):
     return [re.sub(r'[^a-zA-Z_-]', '', tag.get("title").replace(" ", "-")) for tag in res]
 
 def get_note_ids(page=0):
-    res = requests.get('{}?order_by=user_updated_time&order_dir=DESC&limit=100&page={}&token={}'.format(NOTES_ENDPOINT, page, TOKEN))
+    res = requests.get('{}?order_by=user_updated_time&order_dir=DESC&page={}&token={}'.format(NOTES_ENDPOINT, page, TOKEN))
     return res
 
 def fuzzy_title_length(title):
     if len(title) > TITLE_CHARS:
         ind = title.find(" ", TITLE_CHARS - TITLE_LEEWAY)
-        #if ind < TITLE_CHARS + TITLE_LEEWAY:
         return title[0: ind].strip()
     return title.strip()
 
@@ -58,27 +56,26 @@ def process_notes(page=0):
         body = note_metadata["body"]
         title = note_metadata["title"].strip()
 
-        tags = get_note_tags(note["id"])
         created = datetime.fromtimestamp(round(note_metadata["user_created_time"] / 1000), timezone.utc).astimezone()
         updated = datetime.fromtimestamp(round(note_metadata["user_updated_time"] / 1000), timezone.utc).astimezone()
-        tags = ", ".join(tags)
 
         print("original title: %s " % title)
         if title.startswith("Keep Note"):
             title = body.replace('\n', ' ')
 
-        title = re.sub(r'[^a-zA-Z0-9\s\.,\&\)\(\]\[_-]', '', fuzzy_title_length(title))
+        title = re.sub(r'[^a-zA-Z0-9\s\.,\&\)\(_-]', '', fuzzy_title_length(title))
 
         front_matter = ""
-        if body.startswith("---"):
+        if body.strip().startswith("---"):
             print("Note <%s> already has frontmatter: %s" % (title, body))
         else:
             front_matter = f"""---
 created: {created}
 updated: {updated}
 """
+            tags = get_note_tags(note["id"])
             if tags:
-                front_matter += "tags: [" + tags + "]\n"
+                front_matter += "tags: [" + ", ".join(tags) + "]\n"
             front_matter += "---\n\n"
 
             # front_matter += "# " + title + "\n"
@@ -95,6 +92,8 @@ updated: {updated}
                 '{}/{}?token={}'.format(NOTES_ENDPOINT, note["id"], TOKEN),
                 data='{{ "body" : {}, "title": {} }}'.format(json.dumps(body), json.dumps(title))
             )
+        else:
+            print("skipping put request: %s" % title)
 
     if res.json()["has_more"]:
         process_notes(page+1)
